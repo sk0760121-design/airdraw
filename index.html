@@ -3,69 +3,33 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Neon Air Canvas</title>
+    <title>Neon Air Canvas - Smooth Pro</title>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
     <style>
-        body {
-            margin: 0;
-            background: #0f0f0f;
-            color: white;
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            overflow: hidden;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-        }
+        body { margin: 0; background: #080808; color: white; font-family: sans-serif; overflow: hidden; }
         #controls {
-            position: absolute;
-            top: 20px;
-            z-index: 10;
-            background: rgba(255, 255, 255, 0.1);
-            padding: 15px 25px;
-            border-radius: 50px;
-            backdrop-filter: blur(10px);
-            display: flex;
-            gap: 20px;
-            align-items: center;
-            border: 1px solid rgba(255,255,255,0.2);
+            position: absolute; top: 20px; left: 50%; transform: translateX(-50%);
+            z-index: 10; background: rgba(0, 0, 0, 0.7); padding: 12px 25px;
+            border-radius: 50px; display: flex; gap: 15px; align-items: center;
+            border: 1px solid #333; backdrop-filter: blur(5px);
         }
-        canvas {
-            position: absolute;
-            top: 0;
-            left: 0;
-        }
+        canvas { position: absolute; top: 0; left: 0; }
         #video-container {
-            position: absolute;
-            bottom: 20px;
-            right: 20px;
-            width: 200px;
-            border: 2px solid #00f2ff;
-            border-radius: 10px;
-            transform: scaleX(-1); /* Mirror view */
+            position: absolute; bottom: 20px; right: 20px; width: 180px;
+            border: 2px solid #00f2ff; border-radius: 12px; transform: scaleX(-1);
         }
-        input[type="color"] {
-            border: none;
-            width: 30px;
-            height: 30px;
-            cursor: pointer;
-            background: transparent;
-        }
-        .status {
-            font-weight: bold;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-            color: #00f2ff;
-        }
+        input[type="range"] { cursor: pointer; accent-color: #00f2ff; }
+        .status { font-weight: bold; color: #00f2ff; min-width: 120px; text-align: center; }
     </style>
 </head>
 <body>
 
     <div id="controls">
-        <div>Status: <span id="mode-text" class="status">Waiting...</span></div>
+        <div id="mode-text" class="status">Initializing...</div>
         <input type="color" id="colorPicker" value="#00f2ff">
-        <input type="range" id="sizeSlider" min="2" max="20" value="8">
-        <button onclick="clearCanvas()" style="background:none; border: 1px solid white; color:white; border-radius:5px; cursor:pointer; padding: 5px 10px;">Clear</button>
+        <input type="range" id="sizeSlider" min="3" max="25" value="10">
+        <button onclick="clearCanvas()" style="background:#f00; border:none; color:white; padding:5px 15px; border-radius:15px; cursor:pointer;">Clear</button>
     </div>
 
     <video id="input_video" style="display:none"></video>
@@ -81,16 +45,15 @@
         const colorPicker = document.getElementById('colorPicker');
         const sizeSlider = document.getElementById('sizeSlider');
 
-        let lastX = 0;
-        let lastY = 0;
+        // Smoothing variables
+        let lastX = 0, lastY = 0;
+        let smoothX = 0, smoothY = 0;
         let isDrawing = false;
+        const smoothingFactor = 0.35; // 0.1 (slow/smooth) to 1.0 (fast/jittery)
 
-        // Initialize Canvas Size
         function resize() {
             canvasElement.width = window.innerWidth;
             canvasElement.height = window.innerHeight;
-            ctx.lineCap = 'round';
-            ctx.lineJoin = 'round';
         }
         window.addEventListener('resize', resize);
         resize();
@@ -101,60 +64,56 @@
 
         function onResults(results) {
             if (!results.multiHandLandmarks || results.multiHandLandmarks.length === 0) {
-                modeText.innerText = "No Hand Detected";
+                modeText.innerText = "NO HAND";
                 isDrawing = false;
                 return;
             }
 
             const landmarks = results.multiHandLandmarks[0];
-            
-            // Mirror coordinates: (1 - x) because webcam is usually mirrored
-            const x = (1 - landmarks[8].x) * canvasElement.width;
-            const y = landmarks[8].y * canvasElement.height;
+            const rawX = (1 - landmarks[8].x) * canvasElement.width;
+            const rawY = landmarks[8].y * canvasElement.height;
 
-            // Gesture Logic
+            // Apply Exponential Smoothing
+            smoothX = smoothX + (rawX - smoothX) * smoothingFactor;
+            smoothY = smoothY + (rawY - smoothY) * smoothingFactor;
+
+            // Gestures
             const indexUp = landmarks[8].y < landmarks[6].y;
             const middleUp = landmarks[12].y < landmarks[10].y;
             const ringUp = landmarks[16].y < landmarks[14].y;
-            const pinkyUp = landmarks[20].y < landmarks[18].y;
 
-            // 1. One Finger (Index) = DRAW
-            if (indexUp && !middleUp && !ringUp) {
-                modeText.innerText = "Drawing";
-                modeText.style.color = "#00f2ff";
-                
+            if (indexUp && !middleUp) {
+                modeText.innerText = "DRAWING";
                 if (isDrawing) {
                     ctx.beginPath();
+                    ctx.lineCap = 'round';
+                    ctx.lineJoin = 'round';
                     ctx.moveTo(lastX, lastY);
-                    ctx.lineTo(x, y);
+                    ctx.lineTo(smoothX, smoothY);
                     
-                    // Neon Effect
                     ctx.strokeStyle = colorPicker.value;
                     ctx.lineWidth = sizeSlider.value;
-                    ctx.shadowBlur = 15;
+                    
+                    // Strong Neon Glow
+                    ctx.shadowBlur = 12;
                     ctx.shadowColor = colorPicker.value;
                     
                     ctx.stroke();
                 }
-                lastX = x;
-                lastY = y;
+                lastX = smoothX;
+                lastY = smoothY;
                 isDrawing = true;
             } 
-            // 2. Open Palm = ERASE
             else if (indexUp && middleUp && ringUp) {
-                modeText.innerText = "Erasing";
-                modeText.style.color = "#ff0055";
+                modeText.innerText = "ERASING";
                 ctx.globalCompositeOperation = 'destination-out';
                 ctx.beginPath();
-                ctx.arc(x, y, 40, 0, Math.PI * 2);
+                ctx.arc(smoothX, smoothY, 50, 0, Math.PI * 2);
                 ctx.fill();
                 ctx.globalCompositeOperation = 'source-over';
                 isDrawing = false;
-            }
-            // 3. Closed Fist = PAUSE
-            else if (!indexUp && !middleUp && !ringUp) {
-                modeText.innerText = "Paused";
-                modeText.style.color = "#ffff00";
+            } else {
+                modeText.innerText = "PAUSED";
                 isDrawing = false;
             }
         }
@@ -165,9 +124,9 @@
 
         hands.setOptions({
             maxNumHands: 1,
-            modelComplexity: 1,
-            minDetectionConfidence: 0.7,
-            minTrackingConfidence: 0.7
+            modelComplexity: 1, // Medium for speed
+            minDetectionConfidence: 0.75,
+            minTrackingConfidence: 0.75
         });
 
         hands.onResults(onResults);
@@ -175,7 +134,6 @@
         const camera = new Camera(videoElement, {
             onFrame: async () => {
                 await hands.send({image: videoElement});
-                // Sync the preview video
                 if (previewVideo.srcObject !== videoElement.srcObject) {
                     previewVideo.srcObject = videoElement.srcObject;
                 }
