@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Full Screen Air Canvas</title>
+    <title>Air Canvas Pro - High Response</title>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
     <style>
@@ -11,58 +11,80 @@
             margin: 0; 
             background: #000; 
             color: white; 
-            font-family: sans-serif; 
+            font-family: 'Segoe UI', Tahoma, sans-serif; 
             overflow: hidden; 
         }
         
-        /* Video ko background mein full screen karne ke liye */
+        /* Full Screen Background Video */
         #video-full {
             position: fixed;
             top: 0;
             left: 0;
             width: 100vw;
             height: 100vh;
-            object-fit: cover; /* Aspect ratio maintain rakhta hai */
+            object-fit: cover;
             transform: scaleX(-1); /* Mirror effect */
             z-index: 1;
         }
 
-        /* Drawing canvas video ke upar rahega */
+        /* Drawing Layer */
         #drawing_canvas {
             position: absolute;
             top: 0;
             left: 0;
             z-index: 2;
-            pointer-events: none; /* Mouse clicks canvas ke piche ja sakein */
         }
 
+        /* Modern Glass UI Controls */
         #controls {
             position: absolute;
             top: 20px;
             left: 50%;
             transform: translateX(-50%);
             z-index: 10;
-            background: rgba(0, 0, 0, 0.6);
-            padding: 10px 20px;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 12px 25px;
             border-radius: 50px;
             display: flex;
             gap: 15px;
             align-items: center;
-            backdrop-filter: blur(10px);
-            border: 1px solid rgba(255,255,255,0.1);
+            backdrop-filter: blur(15px);
+            border: 1px solid rgba(255,255,255,0.2);
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
         }
 
-        .status { font-weight: bold; color: #00f2ff; text-shadow: 0 0 5px #000; }
-        button { cursor: pointer; border-radius: 20px; border: none; padding: 5px 15px; background: #ff4444; color: white; }
+        .status { 
+            font-weight: bold; 
+            color: #00f2ff; 
+            font-size: 14px;
+            text-transform: uppercase;
+            min-width: 140px;
+            text-align: center;
+        }
+
+        input[type="range"] { accent-color: #00f2ff; cursor: pointer; }
+        input[type="color"] { border: none; background: none; width: 30px; height: 30px; cursor: pointer; }
+        
+        button { 
+            cursor: pointer; 
+            border-radius: 20px; 
+            border: none; 
+            padding: 6px 18px; 
+            background: #ff3333; 
+            color: white; 
+            font-weight: bold;
+            transition: 0.2s;
+        }
+        button:hover { background: #ff0000; transform: scale(1.05); }
     </style>
 </head>
 <body>
 
     <div id="controls">
-        <div id="mode-text" class="status">Starting Camera...</div>
+        <div id="mode-text" class="status">Loading AI...</div>
         <input type="color" id="colorPicker" value="#00f2ff">
-        <input type="range" id="sizeSlider" min="3" max="30" value="12">
-        <button onclick="clearCanvas()">Clear</button>
+        <input type="range" id="sizeSlider" min="2" max="40" value="10">
+        <button onclick="clearCanvas()">Clear All</button>
     </div>
 
     <video id="video-full" autoplay playsinline></video>
@@ -82,11 +104,15 @@
         let lastX = 0, lastY = 0;
         let smoothX = 0, smoothY = 0;
         let isDrawing = false;
-        const smoothing = 0.3;
+        
+        // Smoothing factor (Lower = smoother but slight lag, Higher = faster tracking)
+        const smoothing = 0.4; 
 
         function resize() {
             canvasElement.width = window.innerWidth;
             canvasElement.height = window.innerHeight;
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
         }
         window.addEventListener('resize', resize);
         resize();
@@ -97,47 +123,65 @@
 
         function onResults(results) {
             if (!results.multiHandLandmarks || results.multiHandLandmarks.length === 0) {
-                modeText.innerText = "LOOKING FOR HAND...";
+                modeText.innerText = "No Hand Found";
                 isDrawing = false;
                 return;
             }
 
             const landmarks = results.multiHandLandmarks[0];
-            const x = (1 - landmarks[8].x) * canvasElement.width;
-            const y = landmarks[8].y * canvasElement.height;
+            
+            // Get Index Finger Tip (Landmark 8)
+            const rawX = (1 - landmarks[8].x) * canvasElement.width;
+            const rawY = landmarks[8].y * canvasElement.height;
 
-            smoothX += (x - smoothX) * smoothing;
-            smoothY += (y - smoothY) * smoothing;
+            // Apply Exponential Smoothing to prevent jitter
+            smoothX += (rawX - smoothX) * smoothing;
+            smoothY += (rawY - smoothY) * smoothing;
 
+            // Gesture logic: Which fingers are up?
             const indexUp = landmarks[8].y < landmarks[6].y;
             const middleUp = landmarks[12].y < landmarks[10].y;
             const ringUp = landmarks[16].y < landmarks[14].y;
 
+            // 1. Only Index Finger Up -> DRAW
             if (indexUp && !middleUp) {
-                modeText.innerText = "DRAWING";
+                modeText.innerText = "Status: Drawing";
+                modeText.style.color = "#00f2ff";
+                
                 if (isDrawing) {
                     ctx.beginPath();
-                    ctx.lineCap = 'round';
                     ctx.moveTo(lastX, lastY);
                     ctx.lineTo(smoothX, smoothY);
+                    
                     ctx.strokeStyle = colorPicker.value;
                     ctx.lineWidth = sizeSlider.value;
+                    
+                    // High-quality Neon Glow
                     ctx.shadowBlur = 15;
                     ctx.shadowColor = colorPicker.value;
+                    
                     ctx.stroke();
                 }
-                lastX = smoothX; lastY = smoothY;
+                lastX = smoothX;
+                lastY = smoothY;
                 isDrawing = true;
-            } else if (indexUp && middleUp && ringUp) {
-                modeText.innerText = "ERASING";
+            } 
+            // 2. Index + Middle + Ring Up -> ERASE (Open Palm)
+            else if (indexUp && middleUp && ringUp) {
+                modeText.innerText = "Status: Erasing";
+                modeText.style.color = "#ff3333";
+                
                 ctx.globalCompositeOperation = 'destination-out';
                 ctx.beginPath();
-                ctx.arc(smoothX, smoothY, 50, 0, Math.PI * 2);
+                ctx.arc(smoothX, smoothY, 40, 0, Math.PI * 2);
                 ctx.fill();
                 ctx.globalCompositeOperation = 'source-over';
                 isDrawing = false;
-            } else {
-                modeText.innerText = "PAUSED";
+            }
+            // 3. Fist or other -> PAUSE
+            else {
+                modeText.innerText = "Status: Paused";
+                modeText.style.color = "#eeeeee";
                 isDrawing = false;
             }
         }
@@ -146,11 +190,12 @@
             locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
         });
 
+        // HIGH RESPONSE SETTINGS
         hands.setOptions({
             maxNumHands: 1,
-            modelComplexity: 1,
-            minDetectionConfidence: 0.7,
-            minTrackingConfidence: 0.7
+            modelComplexity: 1, // 1 is faster for real-time
+            minDetectionConfidence: 0.5, // Reduced for better tracking in low light
+            minTrackingConfidence: 0.5
         });
 
         hands.onResults(onResults);
@@ -158,12 +203,13 @@
         const camera = new Camera(videoHidden, {
             onFrame: async () => {
                 await hands.send({image: videoHidden});
+                // Sync the main display video
                 if (videoFull.srcObject !== videoHidden.srcObject) {
                     videoFull.srcObject = videoHidden.srcObject;
                 }
             },
-            width: 1280,
-            height: 720
+            width: 640,
+            height: 480
         });
         camera.start();
     </script>
