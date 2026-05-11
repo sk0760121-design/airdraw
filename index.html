@@ -3,53 +3,86 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Neon Air Canvas - Smooth Pro</title>
+    <title>Full Screen Air Canvas</title>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
     <style>
-        body { margin: 0; background: #080808; color: white; font-family: sans-serif; overflow: hidden; }
+        body { 
+            margin: 0; 
+            background: #000; 
+            color: white; 
+            font-family: sans-serif; 
+            overflow: hidden; 
+        }
+        
+        /* Video ko background mein full screen karne ke liye */
+        #video-full {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            object-fit: cover; /* Aspect ratio maintain rakhta hai */
+            transform: scaleX(-1); /* Mirror effect */
+            z-index: 1;
+        }
+
+        /* Drawing canvas video ke upar rahega */
+        #drawing_canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 2;
+            pointer-events: none; /* Mouse clicks canvas ke piche ja sakein */
+        }
+
         #controls {
-            position: absolute; top: 20px; left: 50%; transform: translateX(-50%);
-            z-index: 10; background: rgba(0, 0, 0, 0.7); padding: 12px 25px;
-            border-radius: 50px; display: flex; gap: 15px; align-items: center;
-            border: 1px solid #333; backdrop-filter: blur(5px);
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 10;
+            background: rgba(0, 0, 0, 0.6);
+            padding: 10px 20px;
+            border-radius: 50px;
+            display: flex;
+            gap: 15px;
+            align-items: center;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255,255,255,0.1);
         }
-        canvas { position: absolute; top: 0; left: 0; }
-        #video-container {
-            position: absolute; bottom: 20px; right: 20px; width: 180px;
-            border: 2px solid #00f2ff; border-radius: 12px; transform: scaleX(-1);
-        }
-        input[type="range"] { cursor: pointer; accent-color: #00f2ff; }
-        .status { font-weight: bold; color: #00f2ff; min-width: 120px; text-align: center; }
+
+        .status { font-weight: bold; color: #00f2ff; text-shadow: 0 0 5px #000; }
+        button { cursor: pointer; border-radius: 20px; border: none; padding: 5px 15px; background: #ff4444; color: white; }
     </style>
 </head>
 <body>
 
     <div id="controls">
-        <div id="mode-text" class="status">Initializing...</div>
+        <div id="mode-text" class="status">Starting Camera...</div>
         <input type="color" id="colorPicker" value="#00f2ff">
-        <input type="range" id="sizeSlider" min="3" max="25" value="10">
-        <button onclick="clearCanvas()" style="background:#f00; border:none; color:white; padding:5px 15px; border-radius:15px; cursor:pointer;">Clear</button>
+        <input type="range" id="sizeSlider" min="3" max="30" value="12">
+        <button onclick="clearCanvas()">Clear</button>
     </div>
 
-    <video id="input_video" style="display:none"></video>
+    <video id="video-full" autoplay playsinline></video>
     <canvas id="drawing_canvas"></canvas>
-    <video id="video-container" autoplay playsinline></video>
+    
+    <video id="hidden_video" style="display:none"></video>
 
     <script>
-        const videoElement = document.getElementById('input_video');
-        const previewVideo = document.getElementById('video-container');
+        const videoFull = document.getElementById('video-full');
+        const videoHidden = document.getElementById('hidden_video');
         const canvasElement = document.getElementById('drawing_canvas');
         const ctx = canvasElement.getContext('2d');
         const modeText = document.getElementById('mode-text');
         const colorPicker = document.getElementById('colorPicker');
         const sizeSlider = document.getElementById('sizeSlider');
 
-        // Smoothing variables
         let lastX = 0, lastY = 0;
         let smoothX = 0, smoothY = 0;
         let isDrawing = false;
-        const smoothingFactor = 0.35; // 0.1 (slow/smooth) to 1.0 (fast/jittery)
+        const smoothing = 0.3;
 
         function resize() {
             canvasElement.width = window.innerWidth;
@@ -64,20 +97,18 @@
 
         function onResults(results) {
             if (!results.multiHandLandmarks || results.multiHandLandmarks.length === 0) {
-                modeText.innerText = "NO HAND";
+                modeText.innerText = "LOOKING FOR HAND...";
                 isDrawing = false;
                 return;
             }
 
             const landmarks = results.multiHandLandmarks[0];
-            const rawX = (1 - landmarks[8].x) * canvasElement.width;
-            const rawY = landmarks[8].y * canvasElement.height;
+            const x = (1 - landmarks[8].x) * canvasElement.width;
+            const y = landmarks[8].y * canvasElement.height;
 
-            // Apply Exponential Smoothing
-            smoothX = smoothX + (rawX - smoothX) * smoothingFactor;
-            smoothY = smoothY + (rawY - smoothY) * smoothingFactor;
+            smoothX += (x - smoothX) * smoothing;
+            smoothY += (y - smoothY) * smoothing;
 
-            // Gestures
             const indexUp = landmarks[8].y < landmarks[6].y;
             const middleUp = landmarks[12].y < landmarks[10].y;
             const ringUp = landmarks[16].y < landmarks[14].y;
@@ -87,24 +118,17 @@
                 if (isDrawing) {
                     ctx.beginPath();
                     ctx.lineCap = 'round';
-                    ctx.lineJoin = 'round';
                     ctx.moveTo(lastX, lastY);
                     ctx.lineTo(smoothX, smoothY);
-                    
                     ctx.strokeStyle = colorPicker.value;
                     ctx.lineWidth = sizeSlider.value;
-                    
-                    // Strong Neon Glow
-                    ctx.shadowBlur = 12;
+                    ctx.shadowBlur = 15;
                     ctx.shadowColor = colorPicker.value;
-                    
                     ctx.stroke();
                 }
-                lastX = smoothX;
-                lastY = smoothY;
+                lastX = smoothX; lastY = smoothY;
                 isDrawing = true;
-            } 
-            else if (indexUp && middleUp && ringUp) {
+            } else if (indexUp && middleUp && ringUp) {
                 modeText.innerText = "ERASING";
                 ctx.globalCompositeOperation = 'destination-out';
                 ctx.beginPath();
@@ -124,22 +148,22 @@
 
         hands.setOptions({
             maxNumHands: 1,
-            modelComplexity: 1, // Medium for speed
-            minDetectionConfidence: 0.75,
-            minTrackingConfidence: 0.75
+            modelComplexity: 1,
+            minDetectionConfidence: 0.7,
+            minTrackingConfidence: 0.7
         });
 
         hands.onResults(onResults);
 
-        const camera = new Camera(videoElement, {
+        const camera = new Camera(videoHidden, {
             onFrame: async () => {
-                await hands.send({image: videoElement});
-                if (previewVideo.srcObject !== videoElement.srcObject) {
-                    previewVideo.srcObject = videoElement.srcObject;
+                await hands.send({image: videoHidden});
+                if (videoFull.srcObject !== videoHidden.srcObject) {
+                    videoFull.srcObject = videoHidden.srcObject;
                 }
             },
-            width: 640,
-            height: 480
+            width: 1280,
+            height: 720
         });
         camera.start();
     </script>
